@@ -1,0 +1,16 @@
+# Core ML/DL Framework
+torch
+
+# Hugging Face Ecosystem
+transformers
+datasets
+evaluate
+
+# Data Science & Plotting
+numpy
+matplotlib
+seaborn
+
+# Utilities
+tqdm
+tensorboard
