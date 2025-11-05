@@ -12,7 +12,7 @@ Traditional MoE models struggle with the "specialization paradox" where load-bal
 
 - **Hierarchical Routing**: Conditioning token-level routing decisions on global sequence context (derived from [CLS] token)
 - **Developmental Trajectory**: Fostering generalist experts in early layers that feed into highly specialized experts in later layers
-- **Preserved Performance**: Achieving 82% increase in last-layer specialization with no accuracy degradation
+- **Preserved Performance**: Achieving 82% (0.1088 - 0.0598) / 0.0598) increase in last-layer specialization with no accuracy degradation
 
 ### Results Summary
 
