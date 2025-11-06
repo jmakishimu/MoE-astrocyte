@@ -1,365 +1,220 @@
 # Astrocyte-Inspired Hierarchical Routing for MoE Models
 
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-ee4c2c.svg)](https://pytorch.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 Official implementation of **"Astrocyte-Inspired Hierarchical Routing for Enhanced Expert Specialization in Mixture-of-Experts Models"** (under review at TMLR).
 
-## Overview
+## TL;DR
 
-This repository implements **Astrocyte-Hierarchical Routing (AHR)**, a novel bio-inspired routing mechanism for Mixture-of-Experts (MoE) models that addresses the persistent challenge of cultivating genuine expert specialization. 
+**Problem**: MoE models struggle with expert specialization due to load-balancing constraints.  
+**Solution**: Bio-inspired hierarchical routing that conditions token-level decisions on global sequence context.  
+**Result**: **82% increase** in expert specialization with **no accuracy loss** (94.23% vs 94.31% baseline).
 
-### Key Innovation
+## Key Results
 
-Traditional MoE models struggle with the "specialization paradox" where load-balancing losses inhibit expert differentiation. AHR solves this by:
-
-- **Hierarchical Routing**: Conditioning token-level routing decisions on global sequence context (derived from [CLS] token)
-- **Developmental Trajectory**: Fostering generalist experts in early layers that feed into highly specialized experts in later layers
-- **Preserved Performance**: Achieving 82% (0.1088 - 0.0598) / 0.0598) increase in last-layer specialization with no accuracy degradation
-
-### Results Summary
-
-| Model | Accuracy | Last Layer Specialization |
-|-------|----------|--------------------------|
-| Dense Baseline | 94.31% | N/A |
-| Softmax MoE | 94.15% | 0.0598 |
-| **AHR (Ours)** | **94.23%** | **0.1088** ⭐ |
+| Model | Accuracy | Last Layer Specialization | Improvement |
+|-------|----------|--------------------------|-------------|
+| Dense Baseline | 94.31% ± 0.05% | N/A | - |
+| Softmax MoE (best) | 94.11% ± 0.08% | 0.0598 | baseline |
+| **AHR (Ours)** | **94.23% ± 0.07%** | **0.1088** | **+82%** ⭐ |
 
 ## Architecture
 
 ```
-Input Sequence → [CLS] Token Extraction
-                      ↓
-              Global Context (Wa)
-                      ↓
-    ┌─────────────────┴─────────────────┐
-    ↓                                   ↓
-Token Routing (Wr)              Additive Bias
-    ↓                                   ↓
-    └─────────────────┬─────────────────┘
-                      ↓
-            Modified Logits (Lmod)
-                      ↓
-              Top-K Selection → Experts
+Input Sequence: X ∈ ℝ^(S×d)  [S tokens, d dimensions]
+         |
+         ├──────────────────────────────┐
+         ↓                              ↓
+    [CLS] Token                    All Tokens
+    X[0] ∈ ℝ^d                     X ∈ ℝ^(S×d)
+         ↓                              ↓
+    Wa: ℝ^d → ℝ^N                  Wr: ℝ^d → ℝ^N
+    (astrocyte)                    (synapses)
+         ↓                              ↓
+    Lglobal ∈ ℝ^N              Ltoken ∈ ℝ^(S×N)
+    (gliotransmitter)          (neurotransmitters)
+         |                              |
+         └────────(broadcast)───────────┤
+                                        ↓
+                    Lmod = Ltoken + Lglobal  (tripartite synapse)
+                                        ↓
+                                Softmax + Top-K=2
+                                        ↓
+                              Weighted Expert Outputs
 ```
+
+**Key Innovation**: Global [CLS]-based bias additively modulates all token routing decisions, creating consistent pathways that promote specialization.
 
 ## Installation
 
-### Requirements
-
 ```bash
-# Create conda environment
 conda create -n astrocyte-moe python=3.8
 conda activate astrocyte-moe
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-### Dependencies
-
-```txt
-torch>=2.0.0
-transformers>=4.30.0
-datasets>=2.14.0
-numpy>=1.24.0
-matplotlib>=3.7.0
-seaborn>=0.12.0
-tensorboard>=2.13.0
-evaluate>=0.4.0
-scikit-learn>=1.3.0
-pandas>=2.0.0
-scipy>=1.10.0
-tqdm>=4.65.0
+pip install torch>=2.0.0 transformers>=4.30.0 datasets evaluate \
+    matplotlib seaborn tensorboard pandas scipy tqdm
 ```
 
 ## Quick Start
 
-### 1. Basic Training
-
-Run the full ablation study with default settings:
+### Full Experiment (5 seeds × 9 configs)
 
 ```bash
 python run_final_experiment.py
 ```
 
-This will train and evaluate all model variants across 5 random seeds.
+**Runtime**: ~4-6 hours (RTX 3080, 12GB VRAM)
 
-### 2. Debug Mode
-
-Test the pipeline quickly with minimal data:
+### Debug Mode (Quick Test)
 
 ```python
-# In run_final_experiment.py, set:
-DEBUG = True  # Uses 200 train/100 eval samples, 1 epoch
+# In run_final_experiment.py, line 83:
+DEBUG = True
 ```
 
 ```bash
 python run_final_experiment.py
 ```
 
-### 3. Custom Configuration
-
-Modify hyperparameters in the script:
-
-```python
-# Model configuration
-ablation_configs = {
-    "astrocyte-hierarchical": {
-        "is_moe": True,
-        "router_type": "astrocyte-hierarchical",
-        "num_experts": 8,
-        "energy_loss_alpha": 0.01,
-        "alpha_balance": 0.01,
-    }
-}
-
-# Training configuration
-NUM_SEEDS = 5  # Number of random seeds
-base_training_args = TrainingArguments(
-    num_train_epochs=6,
-    per_device_train_batch_size=192,
-    learning_rate=5e-5,
-    # ... other args
-)
-```
+**Runtime**: ~5-10 minutes
 
 ## Model Variants
 
-The codebase supports comprehensive ablation studies:
+| Variant | Router Type | Purpose |
+|---------|-------------|---------|
+| `dense` | N/A | Baseline performance |
+| `softmax-moe` | Standard softmax | Standard MoE baseline |
+| **`astrocyte-hierarchical`** | **AHR (additive [CLS] bias)** | **Main contribution** ⭐ |
+| `astrocyte-meanpool` | Mean-pooled context | Ablation: context source |
+| `astrocyte` | Multiplicative gating | Ablation: modulation type |
 
-| Variant | Description | Key Features |
-|---------|-------------|--------------|
-| `dense` | Standard BERT baseline | No MoE, pre-trained weights |
-| `dense-random-ffn` | Dense with reset FFNs | Fair cold-start comparison |
-| `softmax-moe` | Standard MoE | Top-K softmax gating |
-| `softmax-moe-energy` | Softmax + energy loss | Additional L2 regularization |
-| `astrocyte` | Multiplicative modulation | [CLS] sigmoid gating |
-| `astrocyte-no-energy` | Astrocyte w/o energy | Only load balance loss |
-| `astrocyte-unleashed` | Extreme specialization | No balance, high energy |
-| **`astrocyte-hierarchical`** | **AHR (proposed)** | **Additive [CLS] bias** ⭐ |
-| `astrocyte-meanpool` | Mean-pool ablation | Global context via averaging |
+See paper Section 4.2 for full list.
 
-## Project Structure
+## Key Implementation
 
-```
-.
-├── run_final_experiment.py      # Main experiment script
-├── requirements.txt              # Python dependencies
-├── README.md                     # This file
-├── results/                      # Model checkpoints & outputs
-│   ├── astrocyte-hierarchical-E8-LB0.01-EN0.01-seed0/
-│   │   ├── final-model/         # Trained model weights
-│   │   ├── analysis_plots/      # Per-run visualizations
-│   │   └── checkpoint-*/        # Training checkpoints
-│   └── [other configs]/
-├── logs/                         # TensorBoard logs
-│   └── [model-config]/
-└── ablation_plots/               # Comparative analysis
-    ├── ablation_accuracy_comparison.png
-    ├── ablation_specialization_comparison_first_layer.png
-    └── ablation_specialization_comparison_last_layer.png
+```python
+# Standard routing (baseline)
+router_logits = hidden_states · Wr  # (B, S, E)
+
+# AHR routing (proposed)
+cls_token = hidden_states[:, 0, :]              # (B, H)
+global_bias = cls_token · Wa                     # (B, E)
+router_logits = (hidden_states · Wr) + global_bias  # Broadcast
 ```
 
-## Outputs & Analysis
+## Outputs
 
-### 1. Training Logs
-
-View real-time training with TensorBoard:
-
+### Training Logs
 ```bash
 tensorboard --logdir=./logs
 ```
 
-Navigate to `http://localhost:6006` to see:
-- Loss curves (classification, auxiliary, total)
-- Evaluation accuracy
-- Expert utilization histograms
+### Results Structure
+```
+results/
+├── [config]-seed[N]/
+│   ├── final-model/              # Best checkpoint
+│   │   ├── pytorch_model.bin
+│   │   ├── config.json
+│   │   └── eval_results.json
+│   └── analysis_plots/           # Per-model heatmaps
+ablation_plots/
+├── ablation_accuracy_comparison.png
+├── ablation_specialization_comparison_last_layer.png
+└── ablation_all_results.json
+```
 
-### 2. Model Checkpoints
+### Key Visualizations
 
-Each run saves:
-- `final-model/`: Best model weights
-- `eval_results.json`: Final metrics
-- Training state for resumption
+**Last Layer Specialization Heatmap**: Shows expert-topic affinity (e.g., Expert 5 → 59.6% Sports)  
+**Layer-wise Evolution**: Demonstrates generalist (Layer 0) → specialist (Layer 3) trajectory
 
-### 3. Visualizations
-
-#### Per-Model Analysis (`results/[config]/analysis_plots/`)
-
-- **`topic_utilization_last_layer.png`**: Heatmap showing expert specialization by topic
-- **`topic_utilization_all_layers.png`**: Layer-wise specialization evolution
-- Qualitative token routing examples (console output)
-
-#### Ablation Comparison (`ablation_plots/`)
-
-- **Accuracy Comparison**: Bar chart with statistical significance (t-tests)
-- **Specialization Comparison**: First/last layer metrics across all variants
-- Raw results saved to `ablation_all_results.json`
-
-## Key Concepts
-
-### Specialization Score
+## Specialization Score
 
 Quantifies expert differentiation:
 
-```
-Score = mean(std(expert_utilization_by_topic))
-```
-
-- **High score**: Expert activates selectively for specific topics
-- **Low score**: Expert processes all topics uniformly
-
-### Hierarchical Routing Mechanism
-
 ```python
-# Standard routing
-Ltoken = X · Wr  # Token-level logits
-
-# AHR augmentation
-xcls = X[0]                    # Extract [CLS] token
-Lglobal = xcls · Wa            # Global context bias
-Lmod = Ltoken + Lglobal        # Additive modulation
-
-# Top-K selection
-weights = softmax(Lmod)
-top_k_experts = select_topk(weights, k=2)
+# For each layer:
+U[topic, expert] = % of topic's tokens routed to expert
+Specialization = mean(std(U, axis=topics))
 ```
 
-### Biological Inspiration
+**Interpretation**:
+- High score → Expert specializes in specific topics
+- Low score → Expert generalizes across all topics
 
-| Biological Component | Computational Analog |
-|---------------------|---------------------|
-| Astrocyte cell | Global context module (Wa) |
-| Synapses | Token-level routers (Wr) |
-| Gliotransmitters | Additive bias (Lglobal) |
-| Tripartite synapse | Hierarchical routing (token + context) |
+## Requirements
 
-## Reproducibility
-
-### Deterministic Training
-
-The code sets all random seeds for reproducibility:
-
-```python
-torch.manual_seed(seed)
-np.random.seed(seed)
-torch.cuda.manual_seed_all(seed)
-training_args.seed = seed
-```
-
-### Statistical Validation
-
-- All experiments run across **N=5 random seeds**
-- Results reported as **mean ± standard error**
-- Significance tested via **Welch's t-test** (p < 0.05)
-
-### Computational Requirements
-
-**Minimal Configuration** (DEBUG mode):
-- GPU: 8GB VRAM (e.g., RTX 3070)
+**Minimal** (DEBUG mode):
+- GPU: 8GB VRAM (RTX 3070)
 - RAM: 16GB
-- Time: ~5 minutes
+- Time: ~10 minutes
 
-**Full Experiment** (5 seeds × 9 configs):
-- GPU: 12GB+ VRAM (e.g., RTX 3080)
-- RAM: 32GB recommended
+**Full Experiment**:
+- GPU: 12GB VRAM (RTX 3080)
+- RAM: 32GB
 - Time: ~4-6 hours
+- Storage: 50GB
 
-### Optimization Tips
+## Biological Metaphor
 
-For RTX 30-series or newer:
-```python
-torch.backends.cuda.matmul.allow_tf32 = True  # Enabled by default
-torch.backends.cudnn.benchmark = True
-```
+| Biology | Computation |
+|---------|-------------|
+| Astrocyte (integrates ~100K synapses) | [CLS] token → global bias |
+| Synapses (local connections) | Token-level routing |
+| Gliotransmitters (modulators) | Additive bias (Lglobal) |
+| Tripartite synapse | Local + global integration |
 
 ## Extending the Code
 
-### Adding New Router Types
+### Add New Router
 
-1. Define router logic in `MoELayer.__init__()`:
 ```python
+# In MoELayer.__init__():
 if self.config.router_type == "my-router":
     self.my_module = nn.Linear(...)
-```
 
-2. Implement forward pass in `MoELayer.forward()`:
-```python
+# In MoELayer.forward():
 elif self.config.router_type == "my-router":
     router_logits = self.compute_my_routing(hidden_states)
 ```
 
-3. Add to ablation configs:
+### Use Different Dataset
+
 ```python
-"my-router": {
-    "is_moe": True,
-    "router_type": "my-router",
-    # ... hyperparams
+base_run_config = {
+    "dataset_name": "your-dataset",  # Must have 'text' and 'label'
+    # ...
 }
 ```
 
-### Custom Datasets
+## Troubleshooting
 
-Replace AG News with your dataset:
-```python
-script_args = ScriptArguments(
-    dataset_name="your-dataset",  # HuggingFace dataset name
-    model_name_or_path="bert-base-uncased",
-    # ... other args
-)
-```
-
-Ensure dataset has:
-- `text` field (input)
-- `label` field (target)
+**OOM Errors**: Reduce `per_device_train_batch_size` to 96 or 128  
+**No Plots**: Check `tensorboard --logdir=./logs` path  
+**Slow Training**: Enable `torch.backends.cuda.matmul.allow_tf32 = True` (line 631)
 
 ## Citation
 
 ```bibtex
-@article{astrocyte-moe-2025,
-  title={Astrocyte-Inspired Hierarchical Routing for Enhanced Expert Specialization in Mixture-of-Experts Models},
+@article{astrocyte-hierarchical-routing-2025,
+  title={Astrocyte-Inspired Hierarchical Routing for Enhanced Expert 
+         Specialization in Mixture-of-Experts Models},
   author={Anonymous},
-  journal={Under review at Transactions on Machine Learning Research (TMLR)},
+  journal={Under review at TMLR},
   year={2025}
 }
 ```
 
-## Hypotheses & Scientific Method
-
-This codebase follows rigorous scientific principles:
-
-**Hypothesis 1**: Hierarchical routing (global context + local decisions) promotes layer-wise specialization development.
-
-**Validation**: ✅ Confirmed via quantitative specialization scores (0.0139 → 0.1088 from first to last layer)
-
-**Hypothesis 2**: AHR achieves superior specialization without accuracy trade-off.
-
-**Validation**: ✅ Confirmed via statistical comparison (94.23% accuracy, p=0.298 vs dense baseline)
-
-**Hypothesis 3**: Additive bias outperforms multiplicative gating.
-
-**Testing**: Compare `astrocyte-hierarchical` vs `astrocyte-meanpool` results
-
-## Known Limitations
-
-1. **Scale**: Tested on 4-layer, 8-expert models. Large-scale validation needed.
-2. **Task Scope**: Evaluated on text classification only. Generalization to generation/multimodal tasks unverified.
-3. **Decoder Adaptation**: Current [CLS] approach requires modification for causal LM architectures.
-
-See paper Section 6.3 for detailed discussion.
-
 ## License
 
-This project is licensed under the MIT License - see [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- Base MoE implementation inspired by [HuggingFace Transformers](https://github.com/huggingface/transformers)
-- Biological concepts from neuroscience literature (Oschmann et al., 2018; Kozachkov et al., 2025)
-- AG News dataset from [Zhang et al., 2015](https://arxiv.org/abs/1509.01626)
+MIT License - See [LICENSE](LICENSE) file for details.
 
 ## Contact
 
-For questions or issues, please open a GitHub issue or contact [anonymous for review].
+Under double-blind review. Please open a GitHub issue for questions.
 
 ---
 
-⭐ **Star this repo** if you find it useful for your research!
+⭐ **Star this repo** if you find it useful!
