@@ -1305,7 +1305,7 @@ def plot_ablation_results(all_run_results, plot_save_dir):
     and statistical significance relative to the 'dense' baseline.
     """
     print("\n" + "=" * 80)
-    print("📈 RUNNING: Ablation Comparison Plotting (Accuracy)")
+    print("RUNNING: Ablation Comparison Plotting (Accuracy)")
     print("=" * 80)
 
     if not all_run_results:
@@ -1336,7 +1336,7 @@ def plot_ablation_results(all_run_results, plot_save_dir):
     summary = grouped["eval_accuracy"].agg(["mean", "sem"]).reset_index()
     summary = summary.sort_values(by="mean", ascending=False)
 
-    # 💡 NEW: Handle cases with 1 seed (sem will be NaN)
+    # Handle cases with 1 seed (sem will be NaN)
     summary["sem"] = summary["sem"].fillna(0) # Replace NaN with 0 if N=1 seed
 
     plt.figure(figsize=(14, 8)) # Made figure wider
@@ -1387,7 +1387,7 @@ def plot_ablation_results(all_run_results, plot_save_dir):
             fontweight="bold"
         )
 
-    # --- 6. 💡 NEW: Add Statistical Significance (Cleaner) ---
+    # --- 6.Add Statistical Significance (Cleaner) ---
     p_value_texts = [] # Store (y_pos, text_string)
     has_stats = False
 
@@ -1703,12 +1703,12 @@ if __name__ == "__main__":
     all_run_results = []
 
     # --- 4. Start Ablation & Seed Loops ---
-    print(f"--- 🚀 STARTING ABLATION STUDY (N={NUM_SEEDS} SEEDS) ---")
+    print(f"--- STARTING ABLATION STUDY (N={NUM_SEEDS} SEEDS) ---")
 
     for seed in range(NUM_SEEDS):
         current_seed = BASE_SEED + seed
         print("\n" + "=" * 80)
-        print(f"🌱 RUNNING SEED {seed+1}/{NUM_SEEDS} (Seed Value: {current_seed})")
+        print(f" RUNNING SEED {seed+1}/{NUM_SEEDS} (Seed Value: {current_seed})")
         print("=" * 80)
 
         # Set seeds for reproducibility
@@ -1732,7 +1732,7 @@ if __name__ == "__main__":
             # 3. Parse config objects
             script_args = ScriptArguments(**run_config)
 
-            print(f"\n--- 🏁 Starting Pipeline for: {config_name} (Seed {current_seed}) ---")
+            print(f"\n---  Starting Pipeline for: {config_name} (Seed {current_seed}) ---")
 
             # 4. Run Training (or skip/resume)
             # This function now handles all directory naming
@@ -1743,7 +1743,7 @@ if __name__ == "__main__":
                 seed=current_seed # Pass the seed for dir naming
             )
 
-            # 5. ⬅️ NEW: Calculate Specialization Scores
+            # 5. Calculate Specialization Scores
             specialization_score_last_layer = None
             specialization_score_first_layer = None
 
@@ -1781,7 +1781,7 @@ if __name__ == "__main__":
             # 8. Run Post-Training Analysis (for this run)
             # Only run MoE-specific analysis if it's an MoE model
             if script_args.is_moe:
-                print(f"\n--- 🔬 Starting MoE Post-Training Analysis on {trained_model_path} ---")
+                print(f"\n--- Starting MoE Post-Training Analysis on {trained_model_path} ---")
                 run_qualitative_analysis(trained_model_path)
                 run_quantitative_analysis(
                     trained_model_path, plot_dir=plot_dir, num_samples=NUM_ANALYSIS_SAMPLES
@@ -1790,7 +1790,7 @@ if __name__ == "__main__":
                     trained_model_path, plot_dir=plot_dir, num_samples=NUM_ANALYSIS_SAMPLES
                 )
             else:
-                print(f"\n--- 🔬 Skipping MoE-specific analysis for dense model. ---")
+                print(f"\n--- Skipping MoE-specific analysis for dense model. ---")
 
             # 9.  Clear Memory 
             print(f"\n--- Clearing memory after {config_name} (Seed {current_seed}) ---")
@@ -1805,7 +1805,7 @@ if __name__ == "__main__":
 
     # --- 5. All runs complete. Plot final comparison. ---
     print("\n" + "=" * 80)
-    print("🎉 ALL ABLATION RUNS COMPLETE 🎉")
+    print(" ALL ABLATION RUNS COMPLETE ")
     print("=" * 80)
 
     # Plot accuracy results
