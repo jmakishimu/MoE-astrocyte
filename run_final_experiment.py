@@ -1,24 +1,7 @@
 # -*- coding: utf-8 -*-;
 """
-run_local_research_LIGHTWEIGHT.py
+Astrocyte-Inspired Hierarchical Routing for Enhanced Expert Specialization in Mixture-of-Experts Models
 
-A single, complete script for a robust research pipeline comparing
-standard MoE and Astrocyte-inspired MoE on the AG News dataset.
-
-This version is 100% local and uses TensorBoard for logging.
-
-===================================================================
-⚡ LIGHTWEIGHT MODIFICATIONS ⚡
-1.  Uses a smaller base model (bert-small) for significantly
-    faster training and lower VRAM (~88M params vs 500M+).
-2.  Enables fp16 mixed-precision training for speed.
-3.  Uses a large subset (2000 samples) for post-training
-    analysis, making it ~4x faster while remaining credible.
-4.  DEBUG=True mode now tests the *full* pipeline (including
-    analysis) on a tiny dataset.
-
-===================================================================
-⭐ NEW FEATURES (User Request: Ablation Suite) ⭐
 1.  Full Ablation Runner:
     - The main script now runs a full suite of ablation models:
       - 'dense' (baseline BERT)
@@ -48,9 +31,7 @@ This version is 100% local and uses TensorBoard for logging.
     - e.g., './results/astrocyte-E8...-seed0/'
     - The script skips any run that already has a 'final-model'
       and resumes from the last checkpoint if one is found.
-
-⭐ NEW FEATURES (User Request: Specialization Analysis) ⭐
-1.  Specialization Score Calculation:
+6.  Specialization Score Calculation:
     - Adds new function `calculate_specialization_score`.
     - This metric is the *average standard deviation of expert
       utilization across topics*.
@@ -60,7 +41,7 @@ This version is 100% local and uses TensorBoard for logging.
       equally for all topics).
     - This is calculated for the first and last layers of
       each MoE model.
-2.  Specialization Comparison Plot:
+7.  Specialization Comparison Plot:
     - Adds new function `plot_specialization_results`.
     - Generates two new plots:
       - `ablation_specialization_comparison_first_layer.png`
@@ -127,23 +108,13 @@ from datasets import load_dataset
 from torch.utils.data import DataLoader
 from torch.nn import LayerNorm, CrossEntropyLoss
 
-# ---
-# 🚨
-# 🚨  START OF CONFIGURATION
-# 🚨
-# ---
 
 # Set to True for a fast pipeline check (few samples, 1 epoch, fast analysis)
 # Set to False for a full training run
 DEBUG = False # ⬅️ Set to False for your 94.1% model example
 
-# ---
-# 🚨
-# 🚨  END OF CONFIGURATION
-# 🚨
-# ---
 
-print("--- 🩺 GPU Check ---")
+print("--- GPU Check ---")
 print(f"Is CUDA available?    {torch.cuda.is_available()}")
 if torch.cuda.is_available():
     print(f"Device count:        {torch.cuda.device_count()}")
@@ -212,21 +183,21 @@ class MoELayer(nn.Module):
         super().__init__()
         self.config = config
         self.num_experts = config.num_experts
-        self.top_k = 2  # ⭐ NEW: Set K=2
+        self.top_k = 2  #  Set K=2
 
         # Standard token-level router
         self.router = nn.Linear(config.hidden_size, self.num_experts)
 
-        # 🧠 Astrocyte Modulator (for [CLS] token)
+        #  Astrocyte Modulator (for [CLS] token)
         if self.config.router_type == "astrocyte":
             self.modulator = nn.Sequential(
                 nn.Linear(config.hidden_size, self.num_experts), nn.Sigmoid()
             )
-        # ⬅️ NEW (Strategy 3A)
+        # (Strategy 3A)
         elif self.config.router_type == "astrocyte-hierarchical":
             # Just a linear layer, no sigmoid. Output will be added as logits.
             self.modulator = nn.Linear(config.hidden_size, self.num_experts)
-        # ⬅️ NEW (Strategy 3B)
+        # (Strategy 3B)
         elif self.config.router_type == "astrocyte-meanpool":
             # Same structure as 'astrocyte', but will be fed different input
             self.modulator = nn.Sequential(
@@ -244,14 +215,14 @@ class MoELayer(nn.Module):
         # --- 1. Get Router Logits ---
         token_router_logits = self.router(hidden_states)  # (B, S, E)
 
-        # 🧠 Astrocyte Gating Logic (Phase 3)
+        # Astrocyte Gating Logic (Phase 3)
         if self.config.router_type == "astrocyte":
             cls_embedding = hidden_states[:, 0, :]  # (B, H)
             modulation_weights = self.modulator(cls_embedding)  # (B, E)
             modulation_weights = modulation_weights.unsqueeze(1)  # (B, 1, E)
             router_logits = token_router_logits * modulation_weights  # (B, S, E)
 
-        # ⬅️ NEW (Strategy 3A)
+        # (Strategy 3A)
         elif self.config.router_type == "astrocyte-hierarchical":
             cls_embedding = hidden_states[:, 0, :] # (B, H)
             global_logits = self.modulator(cls_embedding) # (B, E)
@@ -259,7 +230,7 @@ class MoELayer(nn.Module):
             # ADD the global bias to the token logits
             router_logits = token_router_logits + global_logits # (B, S, E)
 
-        # ⬅️ NEW (Strategy 3B)
+        # (Strategy 3B)
         elif self.config.router_type == "astrocyte-meanpool":
             # Get all token embeddings, ignoring [CLS]
             token_embeddings = hidden_states[:, 1:, :] # (B, S-1, H)
@@ -273,7 +244,7 @@ class MoELayer(nn.Module):
             # This covers "softmax" router_type
             router_logits = token_router_logits
 
-        # --- 2. ⭐ NEW: Get Top-K Gating Weights ---
+        # --- 2. Get Top-K Gating Weights ---
 
         # 2a. Find the top k logits and their indices
         # We take top_k logits for stable softmax
@@ -637,7 +608,7 @@ class ScriptArguments:
     )
     is_moe: bool = field(
         default=True, metadata={"help": "Whether to use MoE layers or dense FFNs."}
-    )  # ⬅️ NEW
+    )  
     num_experts: int = field(
         default=8, metadata={"help": "Number of experts in MoE layers."}
     )
@@ -660,7 +631,7 @@ def run_training(
     script_args: ScriptArguments,
     training_args: TrainingArguments,
     seed: Optional[int] = None,
-):  # ⬅️ NEW seed argument
+):  # seed argument
     """
     Main training and evaluation function.
     Returns: (model_path, output_dir, eval_results, model_base_name)
@@ -672,7 +643,7 @@ def run_training(
     print(f"Using base model: {script_args.model_name_or_path}")
 
     # 1. Setup logging
-    # ⬅️ NEW run_name logic for ablations
+    # run_name logic for ablations
     if script_args.is_moe:
         model_base_name = (
             f"{script_args.router_type}-E{script_args.num_experts}"
@@ -684,7 +655,7 @@ def run_training(
 
     run_name = model_base_name
     if DEBUG:
-        print("🚨 RUNNING IN DEBUG MODE 🚨")
+        print(" RUNNING IN DEBUG MODE ")
         print("    (Using 200 train/100 eval samples, 1 epoch)")
         training_args.num_train_epochs = 1
         training_args.logging_steps = 1
@@ -705,7 +676,7 @@ def run_training(
     # Check if a *final model* already exists for this config.
     final_model_path = os.path.join(training_args.output_dir, "final-model")
     if os.path.exists(os.path.join(final_model_path, "pytorch_model.bin")):
-        print(f"✅ Found fully trained 'final-model' at: {final_model_path}")
+        print(f" Found fully trained 'final-model' at: {final_model_path}")
         print("Skipping training. Moving directly to analysis.")
         # ⬅️ NEW: Load final eval results if they exist
         eval_results_path = os.path.join(final_model_path, "eval_results.json")
@@ -749,7 +720,7 @@ def run_training(
     # 3. Load Model (MoE or Dense)
     # ⬅️ NEW: Conditional model loading
     if script_args.is_moe:
-        print(f"🚀 Initializing MoE model with WARM START...")
+        print(f" Initializing MoE model with WARM START...")
 
         # 1. Load the DENSE baseline model's config and weights first
         print("    Loading pre-trained dense weights for initialization...")
@@ -778,7 +749,7 @@ def run_training(
         model = MoEBertForSequenceClassification(config=moe_config)
 
         # ---
-        # --- 🚨 START OF CORRECTION 🚨 ---
+        # --- START OF CORRECTION  ---
         # ---
         # 4. Manually copy all matching weights from the dense model.
         # This is required because the MoE model has a different
@@ -840,10 +811,10 @@ def run_training(
                 expert.dense2.weight.data = dense_ffn_w2.clone() + (torch.randn_like(dense_ffn_w2) * noise_std)
                 expert.dense2.bias.data = dense_ffn_b2.clone() + (torch.randn_like(dense_ffn_b2) * noise_std)
         # ---
-        # --- 🚨 END OF CORRECTION 🚨 ---
+        # ---  END OF CORRECTION  ---
         # ---
 
-        print("      ✅ All experts initialized from pre-trained weights.")
+        print("      All experts initialized from pre-trained weights.")
         del dense_model_for_weights # Free up VRAM
         gc.collect()
         torch.cuda.empty_cache()
@@ -859,15 +830,15 @@ def run_training(
             config=config,
         )
 
-        # ⬅️ NEW BLOCK: Re-initialize FFNs for fair "cold start" test
+        #  NEW BLOCK: Re-initialize FFNs for fair "cold start" test
         if model_base_name == "dense-random-ffn":
             print("🔥 Re-initializing FFN weights for 'dense-random-ffn' model...")
             for layer in model.bert.encoder.layer:
                 # A standard BERT FFN is 'intermediate' and 'output.dense'
                 layer.intermediate.apply(model._init_weights)
                 layer.output.dense.apply(model._init_weights)
-            print("✅ FFN weights have been randomly re-initialized.")
-        # ⬅️ END NEW BLOCK
+            print(" FFN weights have been randomly re-initialized.")
+        #  END NEW BLOCK
 
     # Print model size
     num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -878,7 +849,7 @@ def run_training(
 
     def compute_metrics(eval_pred):
         logits, labels = eval_pred
-        # ⬅️ MODIFIED: Handle MoE tuple output vs Dense tensor output
+        #  MODIFIED: Handle MoE tuple output vs Dense tensor output
         if isinstance(logits, tuple):
             logits_to_use = logits[0]
         else:
@@ -904,7 +875,7 @@ def run_training(
 
     # REMOVE default TensorBoard callback
     trainer.remove_callback(TensorBoardCallback)
-    # ⬅️ NEW: Conditionally add MoE or standard callback
+    # Conditionally add MoE or standard callback
     if script_args.is_moe:
         trainer.add_callback(
             MoETensorBoardCallback(eval_dataset=eval_dataset)
@@ -920,12 +891,12 @@ def run_training(
     else:
         print("No checkpoint found. Starting fresh training run.")
 
-    print("--- 🚀 Starting/Resuming Training 🚀 ---")
+    print("---  Starting/Resuming Training  ---")
     trainer.train(resume_from_checkpoint=last_checkpoint)
-    print("--- ✅ Training Complete ---")
+    print("---  Training Complete ---")
 
     # 7. Final Evaluation
-    print("--- 📊 Running Final Evaluation ---")
+    print("---  Running Final Evaluation ---")
     eval_results = trainer.evaluate()
     print(eval_results)
 
@@ -934,15 +905,15 @@ def run_training(
     trainer.save_model(model_save_path)
     tokenizer.save_pretrained(model_save_path)
 
-    # ⬅️ NEW: Save final eval results for plotting
+    # Save final eval results for plotting
     eval_results_path = os.path.join(model_save_path, "eval_results.json")
     with open(eval_results_path, "w") as f:
         json.dump(eval_results, f, indent=2)
 
-    print(f"✅ Model and eval results saved to {model_save_path}")
-    print(f"📈 View logs with: tensorboard --logdir=./logs")
+    print(f" Model and eval results saved to {model_save_path}")
+    print(f" View logs with: tensorboard --logdir=./logs")
 
-    # ⬅️ NEW: Return eval_results and model_base_name
+    # Return eval_results and model_base_name
     return model_save_path, training_args.output_dir, eval_results, model_base_name
 
 
@@ -1025,7 +996,7 @@ def run_qualitative_analysis(model_path):
     print("\n" + "=" * 80)
 
 
-# ⬅️ NEW: Modified function signature to accept a 'desc' for tqdm
+# Modified function signature to accept a 'desc' for tqdm
 def get_topic_utilization_for_layer(model, tokenizer, dataset, device, layer_idx, desc="Analyzing Layer"):
     """Helper function to calculate expert utilization for a specific layer."""
     model.to(device)
@@ -1039,7 +1010,7 @@ def get_topic_utilization_for_layer(model, tokenizer, dataset, device, layer_idx
     total_tokens = 0
 
     with torch.no_grad():
-        # ⬅️ NEW: Updated tqdm description
+        # Updated tqdm description
         for batch in tqdm(dataloader, desc=f"{desc} (Layer {layer_idx})", leave=False):
             # NOTE: This analysis dataloader is separate from the trainer
             # and still has the 'text' column, so we tokenize on the fly.
@@ -1077,7 +1048,7 @@ def run_quantitative_analysis(model_path, plot_dir=".", num_samples=2000):
     and saves a heatmap.
     """
     print("\n" + "=" * 80)
-    print(f"📊 RUNNING: Quantitative Topic-Based Routing (on {num_samples} samples)")
+    print(f"RUNNING: Quantitative Topic-Based Routing (on {num_samples} samples)")
     print("=" * 80)
 
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -1095,7 +1066,7 @@ def run_quantitative_analysis(model_path, plot_dir=".", num_samples=2000):
         print("Model is not a 'moe-bert' model. Skipping quantitative analysis.")
         return
 
-    # ⚡ LIGHTWEIGHT MOD: Shuffle and select N samples
+    #  LIGHTWEIGHT MOD: Shuffle and select N samples
     dataset = (
         load_dataset("ag_news", split="test")
         .shuffle(seed=42)
@@ -1114,7 +1085,7 @@ def run_quantitative_analysis(model_path, plot_dir=".", num_samples=2000):
         )
         print(f"(Analyzing {len(category_dataset)} samples for this category)")
 
-        # ⬅️ NEW: Pass the 'desc' argument
+        #  Pass the 'desc' argument
         utilization = get_topic_utilization_for_layer(
             model, tokenizer, category_dataset, DEVICE, last_layer_idx,
             desc=f"Topic: {label_name}"
@@ -1145,18 +1116,18 @@ def run_quantitative_analysis(model_path, plot_dir=".", num_samples=2000):
 
     filename = f"{plot_dir}/topic_utilization_last_layer.png"
     plt.savefig(filename)
-    print(f"\n✅ Heatmap saved to {filename}")
-    plt.close() # ⬅️ NEW: Close plot to free memory
+    print(f"\n Heatmap saved to {filename}")
+    plt.close() # Close plot to free memory
 
 
 def run_layer_depth_analysis(model_path, plot_dir=".", num_samples=2000):
     """
-    ⭐ DEEPER ANALYSIS: Runs topic-based analysis for *all layers*
+    DEEPER ANALYSIS: Runs topic-based analysis for *all layers*
     and saves a grid of heatmaps.
     """
     print("\n" + "=" * 80)
     print(
-        f"🔬📊 RUNNING: Deep Analysis - Expert Specialization vs. Layer Depth (on {num_samples} samples)"
+        f"RUNNING: Deep Analysis - Expert Specialization vs. Layer Depth (on {num_samples} samples)"
     )
     print("=" * 80)
 
@@ -1203,7 +1174,7 @@ def run_layer_depth_analysis(model_path, plot_dir=".", num_samples=2000):
             category_dataset = dataset.filter(
                 lambda example: example["label"] == i, num_proc=4
             )
-            # ⬅️ NEW: Pass the 'desc' argument
+            # Pass the 'desc' argument
             utilization = get_topic_utilization_for_layer(
                 model, tokenizer, category_dataset, DEVICE, layer_idx,
                 desc=f"L{layer_idx} - Topic: {label_name}"
@@ -1237,8 +1208,8 @@ def run_layer_depth_analysis(model_path, plot_dir=".", num_samples=2000):
 
     filename = f"{plot_dir}/topic_utilization_all_layers.png"
     plt.savefig(filename)
-    print(f"\n✅ Layer-depth analysis plot saved to {filename}")
-    plt.close() # ⬅️ NEW: Close plot to free memory
+    print(f"\n Layer-depth analysis plot saved to {filename}")
+    plt.close() # Close plot to free memory
 
 
 # --- 7. NEW: Specialization Score Calculation Function ---
@@ -1303,7 +1274,7 @@ def calculate_specialization_score(model_path, num_samples=2000, layer_idx=-1):
     # The final score is the average of these std devs
     mean_specialization_score = np.mean(expert_specializations)
 
-    print(f"--- ✅ Specialization Score (Layer {layer_idx}): {mean_specialization_score:.6f} ---")
+    print(f"--- Specialization Score (Layer {layer_idx}): {mean_specialization_score:.6f} ---")
 
     # Clean up memory
     del model, tokenizer, dataset, category_utilization, data, data_per_expert
@@ -1379,7 +1350,7 @@ def plot_ablation_results(all_run_results, plot_save_dir):
     plt.xlabel("Mean Evaluation Accuracy", fontsize=12)
     plt.ylabel("Model Configuration", fontsize=12)
 
-    # --- 4. 💡 NEW: Dynamic Axis Limits (FIX for DEBUG) ---
+    # --- 4. Dynamic Axis Limits (FIX for DEBUG) ---
     min_val = summary["mean"].min()
     max_val = summary["mean"].max()
     max_sem = summary["sem"].max()
@@ -1404,7 +1375,7 @@ def plot_ablation_results(all_run_results, plot_save_dir):
             capsize=5,
             label="Standard Error" if i == 0 else None
         )
-        # 💡 NEW: Add mean value as text on/near the bar
+        # Add mean value as text on/near the bar
         plt.text(
             row["mean"] + 0.0005, # Just to the right of the mean
             i,
@@ -1449,7 +1420,7 @@ def plot_ablation_results(all_run_results, plot_save_dir):
 
                 p_value_texts.append((i, text)) # Store (y_pos, text)
 
-    # 💡 NEW: Find position for and plot p-value text in an aligned column
+    #  Find position for and plot p-value text in an aligned column
     # Place text column just past the longest bar+error
     text_x_pos = plot_max_data + 0.005
 
@@ -1481,11 +1452,11 @@ def plot_ablation_results(all_run_results, plot_save_dir):
     plt.tight_layout()
     plot_path = os.path.join(plot_save_dir, "ablation_accuracy_comparison.png")
     plt.savefig(plot_path)
-    print(f"✅ Ablation comparison plot saved to {plot_path}")
+    print(f"Ablation comparison plot saved to {plot_path}")
     plt.close()
 
 
-# ⬅️ NEW: Function to plot specialization results
+#  Function to plot specialization results
 def plot_specialization_results(all_run_results, plot_save_dir):
     """
     Plots a bar chart comparing MoE model specialization with error bars
@@ -1615,7 +1586,7 @@ def plot_specialization_results(all_run_results, plot_save_dir):
         plt.tight_layout()
         plot_path = os.path.join(plot_save_dir, f"ablation_specialization_comparison_{layer_name.lower().replace(' ', '_')}.png")
         plt.savefig(plot_path)
-        print(f"✅ Specialization comparison plot saved to {plot_path}")
+        print(f"Specialization comparison plot saved to {plot_path}")
         plt.close()
 
 
@@ -1628,7 +1599,7 @@ if __name__ == "__main__":
     torch.backends.cudnn.benchmark = True
 
     # --- 1. Define Ablation Configurations ---
-    NUM_SEEDS = 5  # ⬅️ Set number of random seeds to run (e.g., 3 for stats)
+    NUM_SEEDS = 5  # Set number of random seeds to run (e.g., 3 for stats)
     BASE_SEED = 42
 
     ablation_configs = {
@@ -1636,7 +1607,7 @@ if __name__ == "__main__":
         "dense": {
             "is_moe": False,
         },
-        # ⬅️ NEW FAIR COMPARISON MODEL
+        # NEW FAIR COMPARISON MODEL
         "dense-random-ffn": {
             "is_moe": False,
         },
@@ -1664,20 +1635,20 @@ if __name__ == "__main__":
             "router_type": "astrocyte",
             "energy_loss_alpha": 0.0,
         },
-        # ⬅️ NEW (Strategy 1): Unleash router (no CV loss) and boost purity loss
+        #  Unleash router (no CV loss) and boost purity loss
         "astrocyte-unleashed": {
             "is_moe": True,
             "router_type": "astrocyte",
             "alpha_balance": 0.0,      # Strategy 1: Kill CV loss
             "energy_loss_alpha": 0.05,  # Strategy 1: Boost Purity loss
         },
-        # ⬅️ NEW (Strategy 3A): Hierarchical (additive) routing
+        # Hierarchical (additive) routing
         "astrocyte-hierarchical": {
             "is_moe": True,
             "router_type": "astrocyte-hierarchical",
             "energy_loss_alpha": 0.01, # Keep same as baseline astrocyte
         },
-        # ⬅️ NEW (Strategy 3B): Mean-pooled context routing
+        # Mean-pooled context routing
         "astrocyte-meanpool": {
             "is_moe": True,
             "router_type": "astrocyte-meanpool",
@@ -1705,7 +1676,7 @@ if __name__ == "__main__":
         output_dir=master_output_dir,  # Will be sub-divided in run_training
         logging_dir=log_dir,
         report_to="tensorboard",
-        num_train_epochs=6, # ⬅️ INCREASED from 4 to 6
+        num_train_epochs=6, # INCREASED from 4 to 6
         per_device_train_batch_size=192,
         per_device_eval_batch_size=384,
         dataloader_num_workers=4,
@@ -1821,8 +1792,8 @@ if __name__ == "__main__":
             else:
                 print(f"\n--- 🔬 Skipping MoE-specific analysis for dense model. ---")
 
-            # 9. 🧹 Clear Memory 🧹
-            print(f"\n--- 🧹 Clearing memory after {config_name} (Seed {current_seed}) ---")
+            # 9.  Clear Memory 
+            print(f"\n--- Clearing memory after {config_name} (Seed {current_seed}) ---")
             del script_args
             del training_args
             del run_config
@@ -1830,7 +1801,7 @@ if __name__ == "__main__":
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-            print(f"--- ✅ Memory Cleared ---")
+            print(f"--- Memory Cleared ---")
 
     # --- 5. All runs complete. Plot final comparison. ---
     print("\n" + "=" * 80)
@@ -1840,7 +1811,7 @@ if __name__ == "__main__":
     # Plot accuracy results
     plot_ablation_results(all_run_results, ablation_plot_dir)
 
-    # ⬅️ NEW: Plot specialization results
+    #  Plot specialization results
     plot_specialization_results(all_run_results, ablation_plot_dir)
 
-    print("\n--- ✅ Full Research Pipeline Complete ---")
+    print("\n--- Full Research Pipeline Complete ---")
